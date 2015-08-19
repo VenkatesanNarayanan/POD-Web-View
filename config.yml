@@ -34,3 +34,6 @@ plugins:
 
 app_settings:
   file_size_limit: 200000
+
+project_settings:
+  load_projects : '/home/venkatesan/Backup/PAMS-MDM-5-4/,/home/venkatesan/Backup/PAMS-WWW-10-3/'

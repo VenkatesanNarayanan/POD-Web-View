@@ -1,9 +1,9 @@
 <script src="/javascripts/ace/src-min-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+<link rel="StyleSheet" href="/dtree/dtree.css" type="text/css" />
 <script src="/dtree/dtree.js" type="text/javascript" charset="utf-8"></script>
 
-<link rel="StyleSheet" href="/dtree/dtree.css" type="text/css" />
-
 <script type="text/javascript">
+
 var submitTimer, currentStyle = '', editor;
 var stylesheets = {
     'cpan': [
@@ -49,6 +49,7 @@ var formatters = {
     'github': function (doc) {},
     'none': function (doc) {}
 };
+
 
 var origHTML;
 
@@ -126,76 +127,95 @@ function applyStyle(style) {
         return;
 
     currentStyle = style;
-
     prepareDocument();
 }
 
-function checkFileSize(file) {
-    if (file.size > <% file_size_limit %>) {
-        bootbox.alert({
-            message: 'File too big - maximum allowed size is ' +
-                (<% file_size_limit %> / 1000) + 'kB',
-            animate: false,
-            className: 'error-message',
-            buttons: {
-                ok: {
-                    className: 'btn-default'
-                }
-            }
-        });
-        return false;
-    }
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Venkatesan ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+var projects = new Array(); 
+var paths    = {};
 
-    return true;
+function loadConfigProjects () {
+	$.ajax(
+		{
+			url       : '/getconfigprojectnames',
+			type      : 'POST',
+			dataType  : 'json',
+		} 
+	).done(function (data) {
+		var project_list="";
+
+		$.each(data.project_names, function(index, value) {
+			projects[index] = value[0];
+			project_list = project_list.concat("<option value="+ index + ">" + value[1] + "</option>");  
+		});
+
+		$('#dpl_loaded_projects').append(project_list);
+		loadTree(projects[0]);
+		$("#dpl_loaded_projects").val(0);
+	});
+
 }
 
+function loadTree(path)
+{
+	$.ajax(
+		{
+			url       : '/load_tree',
+			type      : 'POST',
+			dataType  : 'json',
+			data	  : {path : path}
+		} 
+	).done(function (data) {
+		d = new dTree('d');
+		$.each(data.tree, function(index, value) {
+
+			if(value.length < 5)
+			{
+				d.add(value[0], value[1], value[2],'');
+			} 
+			else 
+			{
+				d.add(value[0], value[1], value[2],value[3]);
+				paths[value[3]] = value[4];
+			}
+
+		});
+
+		$('#tree').html(d.toString());
+
+		$('.node').click(function(event){
+			event.preventDefault();
+
+			var href = $(this).attr("href");
+			var id   = href.split("/");
+			var path = paths[href];  
+			submitPodUsingPath(path);
+
+		});
+	});
+}
+
+function submitPodUsingPath(path) {
+
+	$.post('/podhtml', { pod: path, is_path: 1 })
+	.done(function (data) {
+		origHTML = data;
+		prepareDocument();
+
+	});
+
+}
 
 $(function () {
 
-    /* Standard file upload */
-    $('#file-upload').change(function () {
+	//code block for load the project names into dropdownlist
+	loadConfigProjects();
 
-        if (!checkFileSize($(this)[0].files[0]))
-            return;
-
-        var reader = new FileReader();
-        reader.onload = function (event) {
-            submitPod(reader.result, function (pod) { fileUploaded(pod); });
-        };
-        reader.readAsText($(this)[0].files[0]);
-    });
-
-    /* Drag and drop file upload */
-    $('#file-drop')
-        .on('dragenter dragover drop', function (event) {
-            event.stopPropagation();
-            event.preventDefault();
-        })
-        .on('drop', function (event) {
-            var dt = event.originalEvent.dataTransfer;
-            var files = dt.files;
-
-            if (!checkFileSize(files[0]))
-                return;
-
-            var reader = new FileReader();
-            reader.onload = function (event) {
-                submitPod(reader.result, function (pod) { fileUploaded(pod); });
-            };
-            reader.readAsText(files[0]);
-        });
-
-    /* Read POD from the given URL */
-    $('#url-submit').click(function () {
-        if ($('#source-url').val() != '') {
-            $.get($('#source-url').val())
-                .done(function (data) {
-                    submitPod(data);
-                });
-        }
-    });
-
-    $('.dropdown-toggle').dropdown();
+	//on selected index change event for dpl_loaded_projects
+	$('#dpl_loaded_projects').click(function(){
+		var index = $("#dpl_loaded_projects").val();
+		loadTree(projects[index]);
+	});
 
     /* Style selection dropdown */
     $('#style-select li').click(function (event) {
@@ -222,21 +242,6 @@ $(function () {
             editor.focus();
         }
     })
-
-    /* Initialize ACE editor */
-    editor = ace.edit("editor");
-    editor.setTheme("ace/theme/clouds");
-    editor.getSession().setMode("ace/mode/perl");
-
-    /* Submit POD 1 second after the last change was made */
-    editor.getSession().on('change', function () {
-        clearTimeout(submitTimer);
-        submitTimer = setTimeout(function () {
-            submitPod(editor.getValue());
-        }, 1000);
-    });
-
-    editor.focus();
 
     /* Adjust editor and output frame dimensions when the window is resized */
     $(window).resize(function () {
@@ -265,94 +270,46 @@ $(function () {
             parseInt($('.modal-body').css('padding-top')) * 2);
     });
 });
+
 </script>
 
 <div class="row">
-  <div class="col-md-6">
+  <div class="col-md-3">
     <div class="row top-row">
-      <div class="col-md-4">
+      <div class="col-md-2">
         <h4 class="pull-left">Input</h4>
       </div>
-      <div class="col-md-8">
-        <ul id="input" class="nav nav-tabs" data-tabs="tabs">
-          <li class="active"><a href="#source" data-toggle="tab">Source</a></li>
-          <li><a href="#file" data-toggle="tab">File</a></li>
-          <li><a href="#url" data-toggle="tab">URL</a></li>
-          <li><a href="/project" >Project</a></li>
-        </ul>
-      </div>
-    </div>
+  </div>
 
     <div class="row">
-      <div class="col-md-12">
-        <div id="input-panes" class="tab-content">
-          
-          <!-- Source code pane -->
-          <div class="tab-pane active" id="source">
-            <div id="editor"></div>   
-            <script>
-            </script>
-          </div>
-
-          <!-- File upload pane -->
-          <div class="tab-pane" id="file">
+      <div class="col-md-12 output-col">
+		  <!--------------Project pane------------------->
+		  <div class="tab-pane" id="project">
             <div class="panel panel-default">
-              <div class="panel-body">
+              <div class="panel-body" >
                 <p class="lead">
-                  Upload a file
+                  Select Project
                 </p>
-
-                <input id="file-upload" type="file" />
-              </div>
-            </div>
-
-            <p class="lead text-center">
-              or
-            </p>
-
-            <div id="file-drop" class="well">
-              drag and drop your file here
-            </div>
-
-            <div class="checkbox">
-              <input id="file-load-source" type="checkbox" />
-              <label for="file-load-source">
-                place POD source in editor
-              </label>
+				<p>
+					<select id="dpl_loaded_projects" class="btn btn-toogle">
+						<option> configured projects</option>
+					</select>
+				</p>
+				<div id="tree" style ="width : 230px; height : 322px; overflow: auto;">
+				</div>
+			  </div>
             </div>
           </div>
-
-          <!-- URL pane -->
-          <div class="tab-pane" id="url">
-            <div class="panel panel-default">
-              <div class="panel-body">
-                <p class="lead">
-                  Enter URL
-                </p>
-
-                <p>
-                  <input id="source-url" type="text" class="form-control"
-                    value="" />
-                </p>
-                
-                <p class="text-right">
-                  <button type="button" id="url-submit"
-                    class="btn btn-primary">Submit</button>
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
   
-  <div class="col-md-6 output-col">
+  <div class="col-md-9 output-col">
     <div class="row top-row">
-      <div class="col-md-4">
+      <div class="col-md-2">
         <h4>Output</h4>
       </div>
-      <div class="col-md-8">
+      <div class="col-md-10">
         Style: &nbsp;
         <div id="style-select" class="btn-group">
           <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
@@ -366,13 +323,13 @@ $(function () {
           </ul>
         </div>
 
-        <div class="btn-group pull-right">
-          <button id="expand" type="button" class="btn btn-default"
-            title="Expanded view">
-            <span class="glyphicon glyphicon-new-window"></span>
-          </button>
-        </div>
-      </div>
+		<div class="btn-group pull-right">
+			<button id="expand" type="button" class="btn btn-default"
+				title="Expanded view">
+				<span class="glyphicon glyphicon-new-window"></span>
+			</button>
+		</div>
+	</div>
     </div>
 
     <div class="row">
